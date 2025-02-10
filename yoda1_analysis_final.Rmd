@@ -1,0 +1,105 @@
+---
+title: "Yoda1 analysis"
+output: html_notebook
+---
+
+The Yoda1 dataset contains 9333 genes. Previously I removed 272 of these that were within a significant dataset of osteocyte signature shared genes. This left a filtered dataset of 9061 genes, which will be used here.
+Split into up and downregulated groups
+```{r}
+yoda1_up <- yoda1_filter %>% filter(log2FoldChange > 0) #4652
+yoda1_down <- yoda1_filter %>% filter(log2FoldChange < 0) #4408
+```
+Split these groups to find genes with a fold change higher/lower than 2/-2
+```{r}
+yoda1_up_2 <- yoda1_up %>% filter(log2FoldChange > 2) #1
+yoda1_down_2 <- yoda1_down %>% filter(log2FoldChange < -2) #3
+yoda1_biglog <- yoda1_filtsig %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+```
+Format so that I can label the 4 resulting genes
+```{r}
+yoda1_filter$biglog <- match(yoda1_filter$symbol, yoda1_biglog$symbol)
+yoda1_filter$plotnames_2 <- ifelse(yoda1_filter$biglog > 0, yoda1_filter$symbol, NA)
+```
+
+```{r}
+yoda1_filtsig <- yoda1_filter[yoda1_filter$padj <= 0.05 & !is.na(yoda1_filter$padj),] #2848
+iv.mark <- yoda1_filter$biglog > 0
+plot(log2(yoda1_filter$baseMean + 1), yoda1_filter$log2FoldChange, pch=".", col="grey",
+     main="Fold Enrichment >2/<2", xlab="log2(baseMean)", ylab="Log2FC")
+points(log2(yoda1_filter$baseMean + 1)[iv.mark], yoda1_filter$log2FoldChange[iv.mark], col=rgb(0.3,0.7,1,1), pch=20, cex = 2)
+text(log2(yoda1_filter$baseMean + 1), yoda1_filter$log2FoldChange, yoda1_filter$plotnames_2, adj = c(0,0),
+     cex = 0.5)
+```
+DIO2 is hugely upregulated compared to the other genes. PPP2R2C, CIDEC, and FAM169A are hugely downregulated.
+Enrich data for GO terms
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("GO.db")
+BiocManager::install("clusterProfiler")
+library(GO.db)
+library(clusterProfiler)
+YODA1FILT_go <- enricher(yoda1_filtsig$ensembl_ID, universe = yoda1_filter$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1FILT_go@result[YODA1FILT_go@result$p.adjust <= 0.05,]) #80
+barplot(YODA1FILT_go, showCategory = 15, font.size = 7)
+```
+Ribosomes and translation. Protein production, stress response?
+Create separate enrichments for up/downregulated groups
+```{r}
+yoda1_upsig <- yoda1_up[yoda1_up$padj <= 0.05 & !is.na(yoda1_up$padj),] #1498
+yoda1_downsig <- yoda1_down[yoda1_down$padj <= 0.05 & !is.na(yoda1_down$padj),] #1350
+YODA1UP_go <- enricher(yoda1_upsig$ensembl_ID, universe = yoda1_up$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1UP_go@result[YODA1UP_go@result$p.adjust <= 0.05,]) #29
+barplot(YODA1UP_go, showCategory = 15, font.size = 7)
+YODA1DOWN_go <- enricher(yoda1_downsig$ensembl_ID, universe = yoda1_down$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1DOWN_go@result[YODA1DOWN_go@result$p.adjust <= 0.05,]) #66
+barplot(YODA1DOWN_go, showCategory = 15, font.size = 7)
+```
+Up - ribonucleoprotein complex, cytosolic ribosome, cytoplasmic translation, response to virus
+Down - extracellular exosome, extracellular region, extracellular space, inflammatory response
+aPEAR for visualisation of up and downregulated gene sets
+```{r}
+install.packages("aPEAR")
+library(aPEAR)
+pear_yoda1 <- findPathClusters(yoda1_go, cluster = 'hier', minClusterSize = 2)
+aPEAR::plotPathClusters(yoda1_go, pear_yoda1$similarity, pear_yoda1$clusters)
+yoda1_upgo_df <- as.data.frame(YODA1UP_go)
+pear_up <- findPathClusters(yoda1_upgo_df, cluster = "hier" , minClusterSize = 2)
+aPEAR::plotPathClusters(yoda1_upgo_df, pear_up$similarity, pear_up$clusters)
+yoda1_downgo_df <- as.data.frame(YODA1DOWN_go)
+pear_down <- findPathClusters(yoda1_downgo_df, cluster = "hier" , minClusterSize = 2)
+aPEAR::plotPathClusters(yoda1_downgo_df, pear_down$similarity, pear_down$clusters)
+```
+NES = normalised enrichment score
+Search for inflammation-related GO terms
+```{r}
+yoda1_go <- as.data.frame(YODA1FILT_go)
+yoda1_inflam <- yoda1_go %>% filter(ID == 'GO:0006954' | ID == 'GO:0002526' | ID == 'GO:0002544')
+```
+Only GO:0006954 is present. 60 of 2789 associated genes. Significantly upregulated
+Search for bone remodelling-related GO terms
+```{r}
+yoda1_boneremod <- yoda1_go %>% filter(ID == 'GO:0001503' | ID == 'GO:0045779' | ID == 'GO:0045780' | ID == 'GO:0045453' | ID == 'GO:0030500' | ID == 'GO:0030501' | ID == 'GO:0030278' | ID == 'GO:0030279' | ID == 'GO:0043932' | ID == 'GO:0046849')
+```
+No matching GO terms
+Search for pain-related GO terms
+```{r}
+yoda1_pain <- yoda1_go %>% filter(ID == 'GO:0019233' | ID == 'GO:0050966' | ID == 'GO:0048265' | ID == 'GO:1904057' | ID == 'GO:1904058' | ID == 'GO:0062149' | ID == 'GO:0051930' | ID == 'GO:0035255' | ID == 'GO:0035235' | ID == 'GO:0014047' | ID == 'GO:0005314' | ID == 'GO:0031798' | ID == 'GO:0031799' | ID == 'GO:0031800' | ID == 'GO:0031802')
+```
+No matching GO terms
+Disease associations
+```{r}
+BiocManager::install("DOSE")
+BiocManager::install("org.Hs.eg.db")
+library(DOSE)
+library(org.Hs.eg.db)
+yoda1_filtsig$entrez_ID <- mapIds(org.Hs.eg.db, yoda1_filtsig$ensembl_ID, 'ENTREZID', 'ENSEMBL')
+yoda1_filter$entrez_ID <- mapIds(org.Hs.eg.db, yoda1_filter$ensembl_ID, 'ENTREZID', 'ENSEMBL')
+YODA1_do <- DOSE::enrichDO(yoda1_filtsig$entrez_ID, ont = "HDO", organism = "hsa", pvalueCutoff = 0.05, pAdjustMethod = "BH", yoda1_filter$entrez_ID, minGSSize = 1, maxGSSize = 50, qvalueCutoff = 0.5, readable = FALSE)
+```
+
+
