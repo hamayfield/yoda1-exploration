@@ -1,1 +1,1 @@
-A comparison of Yoda1-treated osteocyte RNA sequencing data to the osteocyte transcriptome (Youlten et al, 2021) and the osteocyte mechanosome (Gilbert et al, 2024)
+A comparison of Yoda1-treated osteocyte RNA sequencing data to the osteocyte transcriptome (Youlten et al, 2021), osteocyte mechanosome (Gilbert et al, 2024), Li et al's 2019 fluid shear stress dataset, and Kuttapitiya et al's 2018 BML dataset
