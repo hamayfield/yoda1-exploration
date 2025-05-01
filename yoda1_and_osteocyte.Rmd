@@ -1,0 +1,176 @@
+---
+title: "Yoda1 and Osteocyte transcriptome/signature (Youlten et al. 2021)"
+output: html_notebook
+---
+
+### Load in data
+
+```{r}
+ostsig <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+transcriptome <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+yoda1 <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+go<-read.csv(file.choose())
+```
+
+### Download and library packages
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("clusterProfiler")
+BiocManager::install("GO.db")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("rrvgo")
+install.packages("aPEAR")
+library(aPEAR)
+library(rrvgo)
+library(clusterProfiler)
+library(GO.db)
+library(org.Hs.eg.db)
+```
+
+### Process and filter for significance
+
+```{r}
+yoda1$symbol <- gsub ("(.+)\\..+","\\1",rownames(yoda1))
+yoda1$ensembl_ID <- mapIds(org.Hs.eg.db, yoda1$symbol, 'ENSEMBL', 'SYMBOL')
+#filter out non protein coding genes and NAs
+ostsig_filter <- ostsig %>% filter(Biotype == 'protein_coding')
+transcriptome_filt <- transcriptome %>% filter(Biotype == "protein_coding")
+ostsig_filter <- ostsig_filter %>% filter(!(Human_Ensembl_ID == 'NA')) #1042
+transcriptome_filt <- transcriptome_filt %>% filter(!(Human_Ensembl_ID == 'NA')) #18309
+#filter for significance
+ostsigsig <- ostsig_filter[ostsig_filter$Skeletal_maturation_cluster_corr_pval < 0.05 & !is.na(ostsig_filter$Skeletal_maturation_cluster_corr_pval),] #986
+transsig <- transcriptome_filt[transcriptome_filt$Skeletal_maturation_cluster_corr_pval < 0.05 & !is.na(transcriptome_filt$Skeletal_maturation_cluster_corr_pval),] #10817
+yoda1sig <- yoda1[yoda1$padj < 0.05 & !is.na(yoda1$padj),] #3120
+```
+
+### Split datasets into up and downregulated
+
+```{r}
+yoda1_upsig <- yoda1sig %>% filter(log2FoldChange > 0) #1601
+yoda1_downsig <- yoda1sig %>% filter(log2FoldChange < 0) #1519
+ostsig_upsig <- ostsigsig %>% filter(LFC > 0) #986
+trans_upsig <- transsig %>% filter(LFC > 0) #4464
+trans_downsig <- transsig %>% filter(LFC < 0) #5972
+```
+
+### Create shared datasets
+
+#### Exporting datasets throughout for further analysis
+
+```{r}
+yoda1_and_ostsig <- yoda1[yoda1$ensembl_ID %in% ostsig_filter$Human_Ensembl_ID,] #539
+write.csv(yoda1_and_ostsig, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_ostsig.csv")
+
+yoda1_and_transcriptome <- yoda1[yoda1$ensembl_ID %in% transcriptome_filt$Human_Ensembl_ID,] #8346
+write.csv(yoda1_and_transcriptome, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_transcriptome.csv")
+
+yoda1_and_ostsigsig <- yoda1sig[yoda1sig$ensembl_ID %in% ostsig_filter$Human_Ensembl_ID,] #272
+write.csv(yoda1_and_ostsigsig, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_ostsigsig.csv")
+
+yoda1_and_ostsigup <- yoda1_and_ostsigsig %>% filter(log2FoldChange > 0) #103
+
+yoda1_and_ostsigdn <- yoda1_and_ostsigsig %>% filter(log2FoldChange < 0) #169
+
+yoda1_and_transsig <- yoda1sig[yoda1sig$ensembl_ID %in% transcriptome_filt$Human_Ensembl_ID,]
+write.csv(yoda1_and_transsig, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_transsig.csv")
+
+yoda1_and_transup <- yoda1_and_transsig %>% filter(log2FoldChange > 0) #1459
+
+yoda1_and_transdn <- yoda1_and_transsig %>% filter(log2FoldChange < 0) #1348
+```
+
+### GO Enrichment, ontology, and aPEAR of shared genes: osteocyte signature and Yoda1
+
+```{r}
+#overall gene list
+YODA1OSTSIG_go <- enricher(yoda1_and_ostsigsig$ensembl_ID, universe = yoda1_and_ostsig$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1OSTSIG_go@result[YODA1OSTSIG_go@result$p.adjust < 0.05,]) #4
+barplot(YODA1OSTSIG_go, showCategory = 15, font.size = 7)
+#create fullgo for use when applying ontologies
+fullgo<-c(as.list(GOTERM),as.list(GOOBSOLETE))
+YODA1OSTSIG_go@result$Ontology<-as.factor(sapply(match(YODA1OSTSIG_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+#aPEAR to show cluster networks
+pear_yoda1ost <- findPathClusters(YODA1OSTSIG_go@result, cluster = "hier" , minClusterSize = 5)
+aPEAR::plotPathClusters(YODA1OSTSIG_go@result, pear_yoda1ost$similarity, pear_yoda1ost$clusters)
+#upregulated
+YODA1OSTSIGUP_go <- enricher(yoda1_and_ostsigup$ensembl_ID, universe = yoda1_and_ostsig$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1OSTSIGUP_go@result[YODA1OSTSIGUP_go@result$p.adjust < 0.05,]) #1
+barplot(YODA1OSTSIGUP_go, showCategory = 15, font.size = 7)
+YODA1OSTSIGUP_go@result$Ontology<-as.factor(sapply(match(YODA1OSTSIGUP_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+pear_yoda1ostup <- findPathClusters(YODA1OSTSIGUP_go@result, cluster = "hier" , minClusterSize = 5)
+aPEAR::plotPathClusters(YODA1OSTSIGUP_go@result, pear_yoda1ostup$similarity, pear_yoda1ostup$clusters)
+#downregulated
+YODA1OSTSIGDN_go <- enricher(yoda1_and_ostsigdn$ensembl_ID, universe = yoda1_and_ostsig$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1OSTSIGDN_go@result[YODA1OSTSIGDN_go@result$p.adjust < 0.05,]) #0
+YODA1OSTSIGDN_go@result$Ontology<-as.factor(sapply(match(YODA1OSTSIGDN_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+pear_yoda1ostdn <- findPathClusters(YODA1OSTSIGDN_go@result, cluster = "hier" , minClusterSize = 5)
+aPEAR::plotPathClusters(YODA1OSTSIGDN_go@result, pear_yoda1ostdn$similarity, pear_yoda1ostdn$clusters)
+```
+
+### GO Enrichment, ontology, and aPEAR of shared genes: transcriptome and yoda1
+
+```{r}
+YODA1TRANS_go <- enricher(yoda1_and_transsig$ensembl_ID, universe = yoda1_and_transcriptome$ensembl_ID,
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1TRANS_go@result[YODA1TRANS_go@result$p.adjust < 0.05,]) #116
+barplot(YODA1TRANS_go, showCategory = 15, font.size = 7)
+YODA1TRANS_go@result$Ontology<-as.factor(sapply(match(YODA1TRANS_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+pear_yoda1trans <- findPathClusters(YODA1TRANS_go@result, cluster = "hier" , minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1TRANS_go@result, pear_yoda1trans$similarity, pear_yoda1trans$clusters)
+#upregulated
+YODA1TRANSUP_go <- enricher(yoda1_and_transup$ensembl_ID, universe = yoda1_and_transcriptome$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1TRANSUP_go@result[YODA1TRANSUP_go@result$p.adjust < 0.05,]) #31
+barplot(YODA1TRANSUP_go, showCategory = 15, font.size = 7)
+YODA1TRANSUP_go@result$Ontology<-as.factor(sapply(match(YODA1TRANSUP_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+pear_yoda1transup <- findPathClusters(YODA1TRANSUP_go@result, cluster = "hier" , minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1TRANSUP_go@result, pear_yoda1transup$similarity, pear_yoda1transup$clusters)
+#downregulated
+YODA1TRANSDOWN_go <- enricher(yoda1_and_transdn$ensembl_ID, universe = yoda1_and_transcriptome$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1TRANSDOWN_go@result[YODA1TRANSDOWN_go@result$p.adjust < 0.05,]) #130
+barplot(YODA1TRANSDOWN_go, showCategory = 15, font.size = 7)
+YODA1TRANSDOWN_go@result$Ontology<-as.factor(sapply(match(YODA1TRANSDOWN_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA})) 
+pear_yoda1transdown <- findPathClusters(YODA1TRANSDOWN_go@result, cluster = "hier" , minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1TRANSDOWN_go@result, pear_yoda1transdown$similarity, pear_yoda1transdown$clusters)
+```
+
+### Osteocyte signature genes not in yoda1 dataset: GO, ontology, aPEAR
+
+```{r}
+`%notin%` <- Negate(`%in%`)
+ostsig_not_yoda1 <- ostsig_filter[ostsig_filter$Human_Ensembl_ID %notin% yoda1$ensembl_ID,] #503
+ostsignotyoda1sig<-ostsig_not_yoda1[ostsig_not_yoda1$Skeletal_maturation_cluster_corr_pval < 0.05 & !is.na(ostsig_not_yoda1$Skeletal_maturation_cluster_corr_pval),]
+#GO enrichment
+OSTSIGNYODA1_go <- enricher(ostsignotyoda1sig$Human_Ensembl_ID, universe = ostsig_not_yoda1$Human_Ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(OSTSIGNYODA1_go@result[OSTSIGNYODA1_go@result$p.adjust < 0.05,]) #689
+barplot(OSTSIGNYODA1_go, showCategory = 15, font.size = 7)
+#Add ontologies and plot separately
+OSTSIGNYODA1_go@result$Ontology<-as.factor(sapply(match(OSTSIGNYODA1_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(OSTSIGNYODA1_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(OSTSIGNYODA1_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 6)
+mod.barplot(OSTSIGNYODA1_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 8)
+#aPEAR to show clusters
+pear_ostnyoda1 <- findPathClusters(OSTSIGNYODA1_go@result, cluster = "hier" , minClusterSize = 20)
+aPEAR::plotPathClusters(OSTSIGNYODA1_go@result, pear_ostnyoda1$similarity, pear_ostnyoda1$clusters)
+```
+
+
+```

@@ -1,0 +1,143 @@
+---
+title: "Yoda1 and Fluid shear (Li et al. 2019)"
+output: html_notebook
+---
+
+Install packages 
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("clusterProfiler")
+BiocManager::install("GO.db")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("DO.db")
+install.packages("aPEAR")
+install.packages("readxl")
+BiocManager::install("biomaRt")
+install.packages("tidyverse")
+library(tidyverse)
+library(biomaRt)
+library(readxl)
+library(aPEAR)
+library(clusterProfiler)
+library(GO.db)
+library(org.Hs.eg.db)
+library(DO.db)
+```
+
+Load in datasets
+
+```{r}
+fluid_shearm <- read_excel("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_mouse.xlsx", 
+    col_types = c("text", "text", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "text", "numeric", 
+        "numeric", "numeric"))
+yoda1 <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+go<-read.csv(file.choose())
+```
+
+
+Convert mouse ensembl IDs to human
+
+```{r}
+conversion <- getHomologs(fluid_shearm$ID...1, 
+            species_from = "mmusculus", 
+            species_to = "human")
+
+fluid_shearm$ensembl_gene_id <- fluid_shearm$ID...1
+fluid_shear <- fluid_shearm %>% inner_join(conversion)
+
+fluid_shear$symbol <- mapIds(org.Hs.eg.db, fluid_shear$hsapiens_homolog_ensembl_gene, 'SYMBOL', 'ENSEMBL')
+fluid_shearsig <- fluid_shear[fluid_shear$padj < 0.05 & !is.na(fluid_shear$padj),]
+```
+
+Match to yoda1 dataset
+
+```{r}
+yoda1_and_fluid <- yoda1[yoda1$ensembl_ID %in% fluid_shear$hsapiens_homolog_ensembl_gene,] #8693
+yoda1_and_fluid$symbol <- mapIds(org.Hs.eg.db, yoda1_and_fluid$ensembl_ID, 'SYMBOL', 'ENSEMBL')
+yoda1fluidsig <- yoda1_and_fluid[yoda1_and_fluid$padj < 0.05 & !is.na(yoda1_and_fluid$padj),]
+
+fluid_biglog <- fluid_shear %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+yoda1_biglog <- yoda1 %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+yoda1fluid_biglog <- yoda1_biglog[yoda1_biglog$ensembl_ID %in% fluid_biglog$hsapiens_homolog_ensembl_gene,]
+yoda1_and_fluid$biglog <- match(yoda1_and_fluid$symbol, yoda1fluid_biglog$symbol)
+yoda1_and_fluid$plotnames_2 <- ifelse(yoda1_and_fluid$biglog > 0, yoda1_and_fluid$symbol, NA)
+yoda1_ishlog <- yoda1 %>% filter(log2FoldChange < -1 | log2FoldChange > 1)
+fluid_ishlog <- fluid_shear %>% filter(log2FoldChange < -1 | log2FoldChange > 1)
+yoda1fluid_ishlog <- yoda1_ishlog[yoda1_ishlog$ensembl_ID %in% fluid_ishlog$ensembl_ID,]
+iv.sig <- yoda1fluidsig$padj < 0.05 
+iv.up <- yoda1fluid_ishlog$log2FoldChange > 1 & iv.sig
+iv.dn <- yoda1fluid_ishlog$log2FoldChange < -1 & iv.sig
+plot(log2(yoda1_and_fluid$baseMean + 1), yoda1_and_fluid$log2FoldChange, pch=".", col="grey",
+     main="Yoda1 and Fluid Shear", xlab="log2(baseMean)", ylab="Log2FC", ylim=c(-1.5,1.5))
+points(log2(yoda1fluid_ishlog$baseMean + 1)[iv.up], yoda1fluid_ishlog$log2FoldChange[iv.up], col="forestgreen", pch=20)
+points(log2(yoda1fluid_ishlog$baseMean + 1)[iv.dn], yoda1fluid_ishlog$log2FoldChange[iv.dn], col="steelblue", pch=20)
+text(log2(yoda1_and_fluid$baseMean + 1), yoda1_and_fluid$log2FoldChange, yoda1_and_fluid$plotnames_2, adj = c(0,0),
+     cex = 0.5)
+
+#go<-read.csv(file.choose())
+YODA1FLUID_go <- enricher(yoda1fluidsig$ensembl_ID, universe = yoda1_and_fluid$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1FLUID_go@result[YODA1FLUID_go@result$p.adjust <= 0.05,]) #132
+barplot(YODA1FLUID_go, showCategory = 15, font.size = 7)
+#create fullgo for use when applying ontologies
+#fullgo<-c(as.list(GOTERM),as.list(GOOBSOLETE))
+YODA1FLUID_go@result$Ontology<-as.factor(sapply(match(YODA1FLUID_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1FLUID_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1FLUID_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1FLUID_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 8)
+#install.packages("aPEAR")
+library(aPEAR)
+pear_yoda1fluid <- findPathClusters(YODA1FLUID_go@result, cluster = "hier" , minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1FLUID_go@result, pear_yoda1fluid$similarity, pear_yoda1fluid$clusters)
+```
+
+Split into up and downregulated
+
+```{r}
+fluid_up <- fluid_shear %>% filter(log2FoldChange > 0 & padj < 0.05) #5067
+fluid_down <- fluid_shear %>% filter(log2FoldChange < 0 & padj < 0.05) #4828
+yoda1_up <- yoda1 %>% filter(log2FoldChange > 0 & padj < 0.05) #1601
+yoda1_down <- yoda1 %>% filter(log2FoldChange < 0 & padj < 0.05) #1519
+
+yoda1_and_fluidup <- yoda1_up[yoda1_up$ensembl_ID %in% fluid_up$hsapiens_homolog_ensembl_gene,] #511
+
+yoda1_and_fluiddown <- yoda1_down[yoda1_down$ensembl_ID %in% fluid_down$hsapiens_homolog_ensembl_gene,] #416
+```
+
+Upregulated
+
+```{r}
+YODA1FLUIDUP_go <- enricher(yoda1_and_fluidup$ensembl_ID, universe = yoda1_and_fluid$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1FLUIDUP_go@result[YODA1FLUIDUP_go@result$p.adjust < 0.05,]) #21
+barplot(YODA1FLUIDUP_go, showCategory = 15, font.size = 7)
+YODA1FLUIDUP_go@result$Ontology<-as.factor(sapply(match(YODA1FLUIDUP_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1FLUIDUP_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 7)
+mod.barplot(YODA1FLUIDUP_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 7)
+mod.barplot(YODA1FLUIDUP_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 7)
+pear_yoda1fluidup <- findPathClusters(YODA1FLUIDUP_go@result, cluster = "hier" , minClusterSize = 17)
+aPEAR::plotPathClusters(YODA1FLUIDUP_go@result, pear_yoda1fluidup$similarity, pear_yoda1fluidup$clusters)
+```
+
+Downregulated
+
+```{r}
+YODA1FLUIDDN_go <- enricher(yoda1_and_fluiddown$ensembl_ID, universe = yoda1_and_fluid$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1FLUIDDN_go@result[YODA1FLUIDDN_go@result$p.adjust < 0.05,]) #0
+pear_yoda1fluiddn <- findPathClusters(YODA1FLUIDDN_go@result, cluster = "hier" , minClusterSize = 15)
+aPEAR::plotPathClusters(YODA1FLUIDDN_go@result, pear_yoda1fluiddn$similarity, pear_yoda1fluiddn$clusters)
+```

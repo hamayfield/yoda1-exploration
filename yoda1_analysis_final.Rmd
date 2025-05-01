@@ -1,0 +1,213 @@
+---
+title: "Yoda1 analysis"
+author: "Helena Mayfield"
+date: "30/04/25"
+output:
+  html_notebook: 
+    toc: true
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+Load in datasets
+
+```{r}
+go<-read.csv(file.choose())
+yoda1 <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+```
+
+Download and install packages
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("clusterProfiler")
+BiocManager::install("GO.db")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("rrvgo")
+install.packages("aPEAR")
+library(aPEAR)
+library(rrvgo)
+library(clusterProfiler)
+library(GO.db)
+library(org.Hs.eg.db)
+```
+
+Format datasets and split into significantly regulated, upregulated, and downregulated by Yoda1 as opposed to controls
+
+```{r}
+yoda1$symbol <- gsub ("(.+)\\..+","\\1",rownames(yoda1))
+yoda1$ensembl_ID <- mapIds(org.Hs.eg.db, yoda1$symbol, 'ENSEMBL', 'SYMBOL')
+yoda1sig <- yoda1[yoda1$padj < 0.05 & !is.na(yoda1$padj),] #2848
+yoda1_up <- yoda1 %>% filter(log2FoldChange > 0 & padj < 0.05) #1601
+yoda1_down <- yoda1 %>% filter(log2FoldChange < 0 & padj < 0.05) #1519
+```
+
+Make an MA plot
+
+```{r}
+#Split groups to find genes with a fold change higher/lower than 2/-2
+yoda1_up_2 <- yoda1_up %>% filter(log2FoldChange > 2) #1
+yoda1_down_2 <- yoda1_down %>% filter(log2FoldChange < -2) #3
+yoda1_biglog <- yoda1_sig %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+
+#Format so that resulting genes can be labelled
+yoda1$biglog <- match(yoda1$symbol, yoda1_biglog$symbol)
+yoda1$plotnames_2 <- ifelse(yoda1$biglog > 0, yoda1$symbol, NA)
+
+#Create values to aid in labelling
+iv.mark <- yoda1$biglog > 0
+iv.sig <- yoda1$padj < 0.05 
+iv.up <- yoda1_ishlog$log2FoldChange > 1 & iv.sig
+iv.dn <- yoda1_ishlog$log2FoldChange < -1 & iv.sig
+
+#Create the MA plot
+plot(log2(yoda1$baseMean + 1), yoda1$log2FoldChange, pch=".", col="grey",
+    xlab="log2(baseMean)", ylab="Log2FC")
+#Add labels
+points(log2(yoda1_ishlog$baseMean + 1)[iv.up], yoda1_ishlog$log2FoldChange[iv.up], col="forestgreen", pch=20)
+points(log2(yoda1_ishlog$baseMean + 1)[iv.dn], yoda1_ishlog$log2FoldChange[iv.dn], col="steelblue", pch=20)
+points(log2(yoda1$baseMean + 1)[iv.mark], yoda1$log2FoldChange[iv.mark], col=rgb(1,0.2,0.5,1), pch=20, cex = 2)
+text(log2(yoda1$baseMean + 1), yoda1$log2FoldChange, yoda1$plotnames_2, adj = c(0,0),
+     cex = 0.5)
+```
+
+Enrich data for GO terms
+
+```{r}
+YODA1_go <- enricher(yoda1_sig$ensembl_ID, universe = yoda1$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1_go@result[YODA1_go@result$p.adjust <= 0.05,]) #139
+barplot(YODA1_go, showCategory = 15, font.size = 7)
+
+#create fullgo for use when applying ontologies
+fullgo<-c(as.list(GOTERM),as.list(GOOBSOLETE))
+
+#GO enrichment & plotting
+YODA1_go@result$Ontology<-as.factor(sapply(match(YODA1_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+
+#create function to plot separate ontologies
+mod.barplot<-function(obj, ont, ...){
+  obj@result<-obj@result[obj@result$Ontology==ont,]
+  barplot(obj, ...)
+}
+
+#plot ontologies
+mod.barplot(YODA1_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 7)
+
+#rrvgo plot
+simMatrixAll <- calculateSimMatrix(YODA1_go@result$ID,
+                                orgdb="org.Hs.eg.db",
+                                method="Rel")
+scoresall <- setNames(-log10(YODA1_go@result$qvalue), YODA1_go@result$ID)
+reducedTermsall <- reduceSimMatrix(simMatrixAll,
+                                scoresall,
+                                threshold=0.99999,
+                                orgdb="org.Hs.eg.db")
+scatterPlot(simMatrixAll, reducedTermsall, algorithm = c("pca", "umap"), onlyParents = FALSE, size = "score", addLabel = TRUE, labelSize = 2)
+```
+
+Create separate enrichments for up/downregulated groups
+
+```{r}
+#upregulated GO enrichment
+YODA1UP_go <- enricher(yoda1_up$ensembl_ID, universe = yoda1$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1UP_go@result[YODA1UP_go@result$p.adjust <= 0.05,]) #51
+barplot(YODA1UP_go, showCategory = 15, font.size = 7)
+YODA1UP_go@result$Ontology<-as.factor(sapply(match(YODA1UP_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1UP_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1UP_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1UP_go, ont = "CC", title = paste("Cellular Compartment Enrichment"),
+            showCategory = 15, font.size = 7)
+
+#upregulated rrvgo plot
+#overall
+simMatrixUp <- calculateSimMatrix(YODA1UP_go@result$ID,
+                                orgdb="org.Hs.eg.db",
+                                method="Rel")
+scoresup <- setNames(-log10(YODA1UP_go@result$qvalue), YODA1UP_go@result$ID)
+reducedTermsup <- reduceSimMatrix(simMatrixUp,
+                                scoresup,
+                                threshold=0.99999,
+                                orgdb="org.Hs.eg.db")
+scatterPlot(simMatrixUp, reducedTermsup, algorithm = c("pca", "umap"), onlyParents = FALSE, size = "score", addLabel = TRUE, labelSize = 3.8)
+#downregulated GO enrichment
+YODA1DOWN_go <- enricher(yoda1_down$ensembl_ID, universe = yoda1$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+write.csv(YODA1DOWN_go@result, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1downgo.csv")
+nrow(YODA1DOWN_go@result[YODA1DOWN_go@result$p.adjust <= 0.05,]) #130
+barplot(YODA1DOWN_go, showCategory = 15, font.size = 7)
+YODA1DOWN_go@result$Ontology<-as.factor(sapply(match(YODA1DOWN_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1DOWN_go, ont = "BP", title = paste("Biological Process Enrichment"),
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1DOWN_go, ont = "MF", title = paste("Molecular Function Enrichment"),
+            showCategory = 15, font.size = 7)
+
+mod.barplot(YODA1_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 7)
+#downregulated rrvgo
+#overall
+simMatrixDn <- calculateSimMatrix(YODA1DOWN_go@result$ID,
+                                orgdb="org.Hs.eg.db",
+                                method="Rel")
+scoresdn <- setNames(-log10(YODA1DOWN_go@result$qvalue), YODA1DOWN_go@result$ID)
+reducedTermsdn <- reduceSimMatrix(simMatrixDn,
+                                scoresdn,
+                                threshold=0.99999,
+                                orgdb="org.Hs.eg.db")
+scatterPlot(simMatrixDn, reducedTermsdn, algorithm = c("pca", "umap"), onlyParents = FALSE, size = "score", addLabel = TRUE, labelSize = 3.8)
+```
+
+aPEAR for visualisation of gene sets
+
+```{r}
+#overall
+pear_yoda1 <- findPathClusters(YODA1_go@result, cluster = 'hier', minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1_go@result, pear_yoda1$similarity, pear_yoda1$clusters)
+#upregulated
+pear_up <- findPathClusters(YODA1UP_go@result, cluster = "hier" , minClusterSize = 15)
+aPEAR::plotPathClusters(YODA1UP_go@result, pear_up$similarity, pear_up$clusters)
+#downregulated
+pear_down <- findPathClusters(YODA1DOWN_go@result, cluster = "hier" , minClusterSize = 12)
+aPEAR::plotPathClusters(YODA1DOWN_go@result, pear_down$similarity, pear_down$clusters)
+```
+NES = normalised enrichment score
+
+Search for inflammation-related GO terms
+
+```{r}
+yoda1_go <- as.data.frame(YODA1_go)
+yoda1_inflam <- yoda1_go %>% filter(ID == 'GO:0006954' | ID == 'GO:0002526' | ID == 'GO:0002544')
+```
+Only GO:0006954 is present. 60 of 2789 associated genes. Significantly upregulated
+
+Search for bone remodelling-related GO terms
+```{r}
+yoda1_boneremod <- yoda1_go %>% filter(ID == 'GO:0001503' | ID == 'GO:0045779' | ID == 'GO:0045780' | ID == 'GO:0045453' | ID == 'GO:0030500' | ID == 'GO:0030501' | ID == 'GO:0030278' | ID == 'GO:0030279' | ID == 'GO:0043932' | ID == 'GO:0046849')
+```
+No matching GO terms
+
+Search for pain-related GO terms
+```{r}
+yoda1_pain <- yoda1_go %>% filter(ID == 'GO:0019233' | ID == 'GO:0050966' | ID == 'GO:0048265' | ID == 'GO:1904057' | ID == 'GO:1904058' | ID == 'GO:0062149' | ID == 'GO:0051930' | ID == 'GO:0035255' | ID == 'GO:0035235' | ID == 'GO:0014047' | ID == 'GO:0005314' | ID == 'GO:0031798' | ID == 'GO:0031799' | ID == 'GO:0031800' | ID == 'GO:0031802')
+```
+No matching GO terms

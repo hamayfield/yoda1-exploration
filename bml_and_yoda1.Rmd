@@ -1,0 +1,96 @@
+---
+title: "Yoda1 and Bone Marrow Lesions (Kuttapitiya et al. 2017)"
+output: html_notebook
+---
+
+Load in datasets
+
+```{r}
+library(readxl)
+bml <- read_excel("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/bone_marrow_lesions_final.xlsx")
+yoda1 <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+```
+
+All BML dataset genes significant
+
+Download and install packages
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("clusterProfiler")
+BiocManager::install("GO.db")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("rrvgo")
+install.packages("aPEAR")
+library(aPEAR)
+library(rrvgo)
+library(clusterProfiler)
+library(GO.db)
+library(org.Hs.eg.db)
+```
+
+Split into up and downregulated
+
+```{r}
+bml_up <- bml %>% filter(Log_FC > 0) #128
+bml_down <- bml %>% filter(Log_FC < 0) #90
+yoda1_up <- yoda1 %>% filter(log2FoldChange > 0) #4511
+yoda1_down <- yoda1 %>% filter(log2FoldChange < 0) #4821
+yoda1_upsig <- yoda1_up[yoda1_up$padj <= 0.05 & !is.na(yoda1_up$padj),] #1601
+yoda1_downsig <- yoda1_down[yoda1_down$padj <= 0.05 & !is.na(yoda1_down$padj),] #1519
+```
+
+
+Find shared genes
+```{r}
+yoda1_and_bml <- yoda1[yoda1$symbol %in% bml$Symbol,] #57
+yoda1_and_bmlsig <- yoda1sig[yoda1sig$symbol %in% bml$Symbol,] #29
+yoda1_and_bmlup <- yoda1_upsig[yoda1_upsig$symbol %in% bml_up$Symbol,] #6
+yoda1_and_bmldn <- yoda1_downsig[yoda1_downsig$symbol %in% bml_down$Symbol,] #7
+yoda1u_bmld <- yoda1_upsig[yoda1_upsig$symbol %in% bml_down$Symbol,] #3
+yoda1d_bmlu <- yoda1_downsig[yoda1_downsig$symbol %in% bml_up$Symbol,] #13
+#export created datasets for later use
+write.csv(yoda1_and_bmldn, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_bmldn.csv")
+write.csv(yoda1_and_bmlup, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_bmlup.csv")
+```
+
+GO enrichment
+
+```{r}
+YODA1BML_go <- enricher(yoda1_and_bmlsig$ensembl_ID, universe = yoda1_and_bml$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1BML_go@result[YODA1BML_go@result$p.adjust <= 0.05,])
+```
+
+aPEAR of shared genes
+
+```{r}
+yoda1bml_go <- as.data.frame(YODA1BML_go@result)
+pear_yoda1bml <- findPathClusters(YODA1BML_go@result, cluster = 'hier', minClusterSize = 2)
+aPEAR::plotPathClusters(YODA1BML_go@result, pear_yoda1bml$similarity, pear_yoda1bml$clusters)
+```
+
+GO enrichment of unshared BML genes
+
+(`%notin%` <- Negate(`%in%`))
+
+```{r}
+bml$ensembl_ID <- mapIds(org.Hs.eg.db, bml$Symbol, 'ENSEMBL', 'SYMBOL')
+bml_not_yoda1 <- bml[bml$Symbol %notin% yoda1$symbol,]
+BML_go <- enricher(bml_not_yoda1$ensembl_ID, universe = bml$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(BML_go@result[BML_go@result$p.adjust <= 0.05,]) #127
+barplot(BML_go, showCategory = 15, font.size = 7)
+#apply and plot ontologies
+BML_go@result$Ontology<-as.factor(sapply(match(BML_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(BML_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(BML_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(BML_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 8)
+```
+

@@ -1,0 +1,295 @@
+---
+title: "Yoda1 and Mechanosome (Gilbert et al. 2024)"
+output: html_notebook
+---
+
+### Load in data
+
+```{r}
+`%notin%` <- Negate(`%in%`)
+mech <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+yoda1 <- read.csv(file.choose(), row.names = 1, stringsAsFactors = T)
+go<-read.csv(file.choose())
+```
+
+### Download and library packages
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.20")
+BiocManager::install("clusterProfiler")
+BiocManager::install("GO.db")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("DO.db")
+install.packages("aPEAR")
+BiocManager::install("rrvgo")
+library(rrvgo)
+library(aPEAR)
+library(clusterProfiler)
+library(GO.db)
+library(org.Hs.eg.db)
+library(DO.db)
+library(readr)
+```
+
+
+### Process into correct format, create significant datasets
+
+```{r}
+mech$ensembl_ID <- gsub ("(.+)\\..+","\\1",rownames(mech))
+mech$symbol <- mapIds(org.Hs.eg.db, mech$ensembl_ID, 'SYMBOL', 'ENSEMBL')
+mechsig <- mech[mech$padj < 0.05 & !is.na(mech$padj),]
+yoda1$symbol <- gsub ("(.+)\\..+","\\1",rownames(yoda1))
+yoda1$ensembl_ID <- mapIds(org.Hs.eg.db, yoda1$symbol, 'ENSEMBL', 'SYMBOL')
+yoda1sig <- yoda1[yoda1$padj < 0.05 & !is.na(yoda1$padj),]
+```
+
+### Split datasets into up and downregulated
+
+```{r}
+mech_up <- mech %>% filter(log2FoldChange > 0 & padj < 0.05) #4538
+mech_down <- mech %>% filter(log2FoldChange < 0 & padj < 0.05) #3026
+yoda1_up <- yoda1 %>% filter(log2FoldChange > 0 & padj < 0.05) #1601
+yoda1_down <- yoda1 %>% filter(log2FoldChange < 0 & padj < 0.05) #1519
+```
+
+### Overall shared gene list
+
+```{r}
+yoda1_and_mech <- yoda1[yoda1$ensembl_ID %in% mech$ensembl_ID,] #9101
+yoda1_mechsig <- yoda1sig[yoda1sig$ensembl_ID %in% mechsig$ensembl_ID,] #1476
+```
+
+### MA plot, GO enrichment, ontology, and aPEAR
+
+```{r}
+#MA plot
+##Create datasets to be labelled
+mech_biglog <- mech %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+yoda1_biglog <- yoda1 %>% filter(log2FoldChange < -2 | log2FoldChange > 2)
+yoda1mech_biglog <- yoda1_biglog[yoda1_biglog$ensembl_ID %in% mech_biglog$ensembl_ID,]
+yoda1_and_mech$biglog <- match(yoda1_and_mech$symbol, yoda1mech_biglog$symbol)
+yoda1_and_mech$plotnames_2 <- ifelse(yoda1_and_mech$biglog > 0, yoda1_and_mech$symbol, NA)
+yoda1_ishlog <- yoda1 %>% filter(log2FoldChange < -1 | log2FoldChange > 1)
+mech_ishlog <- mech %>% filter(log2FoldChange < -1 | log2FoldChange > 1)
+yoda1mech_ishlog <- yoda1_ishlog[yoda1_ishlog$ensembl_ID %in% mech_ishlog$ensembl_ID,]
+iv.mark <- yoda1_and_mech$biglog > 0
+iv.sig <- yoda1_and_mech$padj < 0.05 
+iv.up <- yoda1mech_ishlog$log2FoldChange > 1 & iv.sig
+iv.dn <- yoda1mech_ishlog$log2FoldChange < -1 & iv.sig
+##Make the plot
+plot(log2(yoda1_and_mech$baseMean + 1), yoda1_and_mech$log2FoldChange, pch=".", col="grey",
+     main="Yoda1 and Mechanosome", xlab="log2(baseMean)", ylab="Log2FC")
+##Add labels
+points(log2(yoda1mech_ishlog$baseMean + 1)[iv.up], yoda1mech_ishlog$log2FoldChange[iv.up], col="forestgreen", pch=20)
+points(log2(yoda1mech_ishlog$baseMean + 1)[iv.dn], yoda1mech_ishlog$log2FoldChange[iv.dn], col="steelblue", pch=20)
+points(log2(yoda1_and_mech$baseMean + 1)[iv.mark], yoda1_and_mech$log2FoldChange[iv.mark], col=rgb(1,0.2,0.5,1), pch=20, cex = 2)
+text(log2(yoda1_and_mech$baseMean + 1), yoda1_and_mech$log2FoldChange, yoda1_and_mech$plotnames_2, adj = c(0,0),
+     cex = 0.5)
+
+#GO enrichment
+YODA1MECH_go <- enricher(yoda1_mechsig$ensembl_ID, universe = yoda1_and_mech$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1MECH_go@result[YODA1MECH_go@result$p.adjust < 0.05,]) #32
+barplot(YODA1MECH_go, showCategory = 15, font.size = 7)
+#create fullgo for use when applying ontologies
+fullgo<-c(as.list(GOTERM),as.list(GOOBSOLETE))
+YODA1MECH_go@result$Ontology<-as.factor(sapply(match(YODA1MECH_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+#plot separate ontologies
+mod.barplot(YODA1MECH_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1MECH_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1MECH_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 8)
+
+#aPEAR
+pear_yoda1mech <- findPathClusters(YODA1MECH_go@result, cluster = "hier" , minClusterSize = 10)
+aPEAR::plotPathClusters(YODA1MECH_go@result, pear_yoda1mech$similarity, pear_yoda1mech$clusters)
+
+#export dataset for further analysis
+write.csv(yoda1_and_mech, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_mech.csv")
+```
+
+### Shared upregulated genes
+
+```{r}
+#create shared upregulated dataset
+yoda1_and_mechup <- yoda1_up[yoda1_up$ensembl_ID %in% mech_up$ensembl_ID,] #492
+#run GO enrichment
+YODA1MECHUP_go <- enricher(yoda1_and_mechup$ensembl_ID, universe = yoda1_and_mech$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1MECHUP_go@result[YODA1MECHUP_go@result$p.adjust < 0.05,]) #0
+#add ontologies
+YODA1MECHUP_go@result$Ontology<-as.factor(sapply(match(YODA1MECHUP_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+#aPEAR clustering
+pear_yoda1mechup <- findPathClusters(YODA1MECHUP_go@result, cluster = "hier" , minClusterSize = 20)
+aPEAR::plotPathClusters(YODA1MECHUP_go@result, pear_yoda1mechup$similarity, pear_yoda1mechup$clusters)
+#export for further analysis
+write.csv(yoda1_and_mechup, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_mechup.csv")
+```
+
+### Shared downregulated genes
+
+```{r}
+#create shared downregulated dataset
+yoda1_and_mechdown <- yoda1_down[yoda1_down$ensembl_ID %in% mech_down$ensembl_ID,] #287
+#run GO enrichment
+YODA1MECHDN_go <- enricher(yoda1_and_mechdown$ensembl_ID, universe = yoda1_and_mech$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1MECHDN_go@result[YODA1MECHDN_go@result$p.adjust < 0.05,]) #1
+barplot(YODA1MECHDN_go, showCategory = 15, font.size = 7)
+#add ontologies
+YODA1MECHDN_go@result$Ontology<-as.factor(sapply(match(YODA1MECHDN_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+#aPEAR clustering
+pear_yoda1mechdn <- findPathClusters(YODA1MECHDN_go@result, cluster = "hier" , minClusterSize = 18)
+aPEAR::plotPathClusters(YODA1MECHDN_go@result, pear_yoda1mechdn$similarity, pear_yoda1mechdn$clusters)
+#export data for further analysis
+write.csv(yoda1_and_mechdown, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1_and_mechdown.csv")
+```
+
+### Mech up, yoda1 down
+
+```{r}
+yoda1dn_and_mechup <- yoda1_down[yoda1_down$ensembl_ID %in% mech_up$ensembl_ID,] #430
+YODA1DMECHU_go <- enricher(yoda1dn_and_mechup$ensembl_ID, universe = yoda1_and_mech$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1DMECHU_go@result[YODA1DMECHU_go@result$p.adjust < 0.05,]) #15
+barplot(YODA1DMECHU_go, showCategory = 15, font.size = 7)
+
+YODA1DMECHU_go@result$Ontology<-as.factor(sapply(match(YODA1DMECHU_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1DMECHU_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1DMECHU_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1DMECHU_go, ont = "CC", title = paste("Cellular Compartment Enrichment"), 
+            showCategory = 15, font.size = 8)
+
+pear_yoda1dmechu <- findPathClusters(YODA1DMECHU_go@result, cluster = "hier" , minClusterSize = 17)
+aPEAR::plotPathClusters(YODA1DMECHU_go@result, pear_yoda1dmechu$similarity, pear_yoda1dmechu$clusters)
+write.csv(yoda1dn_and_mechup, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1dn_and_mechup.csv")
+```
+
+### Yoda1 up, mech down
+
+```{r}
+yoda1up_and_mechdn <- yoda1_up[yoda1_up$ensembl_ID %in% mech_down$ensembl_ID,] #267
+YODA1UMECHD_go <- enricher(yoda1up_and_mechdn$ensembl_ID, universe = yoda1_and_mech$ensembl_ID, 
+             TERM2GENE=go[,c(4,1)], TERM2NAME=go[,c(4,5)])
+nrow(YODA1UMECHD_go@result[YODA1UMECHD_go@result$p.adjust < 0.05,]) #30
+barplot(YODA1UMECHD_go, showCategory = 15, font.size = 7)
+
+YODA1UMECHD_go@result$Ontology<-as.factor(sapply(match(YODA1UMECHD_go@result$ID,names(fullgo)), 
+                                     function(x) if (!is.na(x)) {Ontology(fullgo[[x]])} else {NA}))
+mod.barplot(YODA1UMECHD_go, ont = "BP", title = paste("Biological Process Enrichment"), 
+            showCategory = 15, font.size = 8)
+mod.barplot(YODA1UMECHD_go, ont = "MF", title = paste("Molecular Function Enrichment"), 
+            showCategory = 15, font.size = 8)
+
+pear_yoda1umechd <- findPathClusters(YODA1UMECHD_go@result, cluster = "hier" , minClusterSize = 15)
+aPEAR::plotPathClusters(YODA1UMECHD_go@result, pear_yoda1umechd$similarity, pear_yoda1umechd$clusters)
+write.csv(yoda1up_and_mechdn, file="C:/Users/hamay/OneDrive - Cardiff University/R Stuff/spreadsheets/yoda1up_and_mechdn.csv")
+```
+
+### SubCellularVis (using gene symbols)
+```{r}
+devtools::install_github("jowatson2011/subcellularvis")
+library(subcellularvis)
+subcellularapp()
+```
+##### input all shared gene lists
+
+### Revigo:
+
+#### Yoda1 and mechanosome upregulated:
+
+```{r}
+simMatrix <- calculateSimMatrix(YODA1MECHUP_go@result$ID,
+                                orgdb="org.Hs.eg.db",
+                                method="Rel")
+scores <- setNames(-log10(YODA1MECHUP_go@result$qvalue), YODA1MECHUP_go@result$ID)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.99999,
+                                orgdb="org.Hs.eg.db")
+scatterPlot(simMatrix, reducedTerms, algorithm = c("pca", "umap"), onlyParents = FALSE, size = "score", addLabel = TRUE, labelSize = 2)
+```
+
+#### Yoda1 and mechanosome downregulated:
+
+```{r}
+#Biological Process
+simMatrixDn <- calculateSimMatrix(YODA1MECHDN_go@result$ID,
+                                orgdb="org.Hs.eg.db",
+                                method="Rel")
+scoresdn <- setNames(-log10(YODA1MECHDN_go@result$qvalue), YODA1MECHDN_go@result$ID)
+reducedTermsdn <- reduceSimMatrix(simMatrixDn,
+                                scoresdn,
+                                threshold=0.99999,
+                                orgdb="org.Hs.eg.db")
+scatterPlot(simMatrixDn, reducedTermsdn, algorithm = c("pca", "umap"), onlyParents = FALSE, size = "score", addLabel = TRUE, labelSize = 2)
+```
+
+GO terms/genes relating to mechanical load imported from mechanosome:
+
+```{r}
+mech_up_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/mechanically_up_mechanosome.txt") #46 genes
+mech_down_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/mechanically_down_mechanosome.txt") #24
+#find genes in yoda1 dataset
+yoda1_and_mechgoup <- yoda1sig[yoda1sig$symbol %in% mech_up_mechanosome$Symbol,] #18
+yoda1_and_mechgodn <- yoda1sig[yoda1sig$symbol %in% mech_down_mechanosome$Symbol,] #8
+#specify regulation
+yoda1up_and_mechgoup <- yoda1_up[yoda1_up$symbol %in% mech_up_mechanosome$Symbol,] #8
+yoda1dn_and_mechgodn <- yoda1_down[yoda1_down$symbol %in% mech_down_mechanosome$Symbol,] #3
+yoda1up_and_mechgoup
+yoda1dn_and_mechgodn
+```
+
+Repeat for pain, bone remodelling, and inflammation
+
+```{r}
+#inflammation
+inflam_up_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/inflam_up_mechanosome.txt") 
+inflam_down_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/inflam_down_mechanosome.txt") 
+
+yoda1_and_inflamgoup <- yoda1sig[yoda1sig$symbol %in% inflam_up_mechanosome$Symbol,] #22
+yoda1_and_inflamgodn <- yoda1sig[yoda1sig$symbol %in% inflam_down_mechanosome$Symbol,] #9
+
+yoda1up_and_inflamgoup <- yoda1_up[yoda1_up$symbol %in% inflam_up_mechanosome$Symbol,] #4
+yoda1dn_and_inflamgodn <- yoda1_down[yoda1_down$symbol %in% inflam_down_mechanosome$Symbol,] #3
+yoda1up_and_inflamgoup
+yoda1dn_and_inflamgodn
+
+#bone remodelling
+bone_up_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/bone_up_mechanosome.txt") 
+bone_down_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/bone_down_mechanosome.txt") 
+
+yoda1_and_bonegoup <- yoda1sig[yoda1sig$symbol %in% bone_up_mechanosome$Symbol,] #19
+yoda1_and_bonegodn <- yoda1sig[yoda1sig$symbol %in% bone_down_mechanosome$Symbol,] #13
+
+yoda1up_and_bonegoup <- yoda1_up[yoda1_up$symbol %in% bone_up_mechanosome$Symbol,] #7
+yoda1dn_and_bonegodn <- yoda1_down[yoda1_down$symbol %in% bone_down_mechanosome$Symbol,] #5
+yoda1up_and_bonegoup
+yoda1dn_and_bonegodn
+
+#pain
+pain_up_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/pain_up_mechanosome.txt") 
+pain_down_mechanosome <- read_table("C:/Users/hamay/OneDrive - Cardiff University/R Stuff/txt files/pain_down_mechanosome.txt") 
+
+yoda1_and_paingoup <- yoda1sig[yoda1sig$symbol %in% pain_up_mechanosome$Symbol,] #14
+yoda1_and_paingodn <- yoda1sig[yoda1sig$symbol %in% pain_down_mechanosome$Symbol,] #7
+
+yoda1up_and_paingoup <- yoda1_up[yoda1_up$symbol %in% pain_up_mechanosome$Symbol,] #8
+yoda1dn_and_paingodn <- yoda1_down[yoda1_down$symbol %in% pain_down_mechanosome$Symbol,] #6
+yoda1up_and_paingoup
+yoda1dn_and_paingodn
+```
+
+
+
+
