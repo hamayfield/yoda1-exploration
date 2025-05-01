@@ -47,3 +47,5 @@
 -bone_marrow_lesions.csv
 
 -bml_and_yoda1.Rmd
+
+##### txt files were used to search for readouts of osteoarthritis, as defined by Gilbert et al (2024).
