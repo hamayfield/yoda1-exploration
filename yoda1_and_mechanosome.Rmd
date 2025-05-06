@@ -76,14 +76,18 @@ mech_ishlog <- mech %>% filter(log2FoldChange < -1 | log2FoldChange > 1)
 yoda1mech_ishlog <- yoda1_ishlog[yoda1_ishlog$ensembl_ID %in% mech_ishlog$ensembl_ID,]
 iv.mark <- yoda1_and_mech$biglog > 0
 iv.sig <- yoda1_and_mech$padj < 0.05 
-iv.up <- yoda1mech_ishlog$log2FoldChange > 1 & iv.sig
-iv.dn <- yoda1mech_ishlog$log2FoldChange < -1 & iv.sig
+iv.up1 <- yoda1mech_ishlog$log2FoldChange > 1 & iv.sig
+iv.dn1 <- yoda1mech_ishlog$log2FoldChange < -1 & iv.sig
+iv.up <- yoda1_and_mechup$padj < 0.05
+iv.dn <- yoda1_and_mechdown$padj < 0.05
 ##Make the plot
 plot(log2(yoda1_and_mech$baseMean + 1), yoda1_and_mech$log2FoldChange, pch=".", col="grey",
      main="Yoda1 and Mechanosome", xlab="log2(baseMean)", ylab="Log2FC")
 ##Add labels
-points(log2(yoda1mech_ishlog$baseMean + 1)[iv.up], yoda1mech_ishlog$log2FoldChange[iv.up], col="forestgreen", pch=20)
-points(log2(yoda1mech_ishlog$baseMean + 1)[iv.dn], yoda1mech_ishlog$log2FoldChange[iv.dn], col="steelblue", pch=20)
+points(log2(yoda1mech_ishlog$baseMean + 1)[iv.up1], yoda1mech_ishlog$log2FoldChange[iv.up1], col="forestgreen", pch=20)
+points(log2(yoda1mech_ishlog$baseMean + 1)[iv.dn1], yoda1mech_ishlog$log2FoldChange[iv.dn1], col="steelblue", pch=20)
+points(log2(yoda1_and_mechup$baseMean + 1)[iv.up], yoda1_and_mechup$log2FoldChange[iv.up], col="forestgreen", pch=".")
+points(log2(yoda1_and_mechdown$baseMean + 1)[iv.dn], yoda1_and_mechdown$log2FoldChange[iv.dn], col="steelblue", pch=".")
 points(log2(yoda1_and_mech$baseMean + 1)[iv.mark], yoda1_and_mech$log2FoldChange[iv.mark], col=rgb(1,0.2,0.5,1), pch=20, cex = 2)
 text(log2(yoda1_and_mech$baseMean + 1), yoda1_and_mech$log2FoldChange, yoda1_and_mech$plotnames_2, adj = c(0,0),
      cex = 0.5)
