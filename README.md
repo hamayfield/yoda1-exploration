@@ -6,7 +6,7 @@
 
 -Control.DMSO_Yoda1_1.csv
 
--transcriptome.csv
+-transcriptome.csv (Youlten et al. 2021)
 
 -yoda1_and_osteocyte.Rmd
 
@@ -14,7 +14,7 @@
 
 -Control.DMSO_Yoda1_1.csv
 
--osteocyte_sig_genes.csv
+-osteocyte_sig_genes.csv (Youlten et al. 2021)
 
 -yoda1_and_osteocyte.Rmd
 
@@ -28,7 +28,7 @@
 
 -Control.DMSO_Yoda1_1.csv
 
--loadedvscontrol_counts.csv
+-loadedvscontrol_counts.csv (Gilbert et al. 2024)
 
 -yoda1_and_mechanosome.Rmd
 
@@ -36,7 +36,7 @@
 
 -Control.DMSO_Yoda1_1.csv
 
--fluid_shear.xlsx
+-fluid_shear.xlsx (Li et al. 2019)
 
 -yoda1_and_fluidshear.Rmd
 
@@ -44,8 +44,16 @@
 
 -Control.DMSO_Yoda1_1.csv
 
--bone_marrow_lesions.csv
+-bone_marrow_lesions.csv (Kuttapitiya et al. 2017)
 
 -bml_and_yoda1.Rmd
 
-##### txt files were used to search for readouts of osteoarthritis, as defined by Gilbert et al (2024).
+##### For the readouts of OA analysis, these files were used:
+
+-Control.DMSO_Yoda1_1.csv
+
+-Readouts_OA.XLSX (Gilbert et al. 2024)
+
+-all txt files
+
+-yoda1_analysis_final.Rmd
