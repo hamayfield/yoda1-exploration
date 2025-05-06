@@ -56,4 +56,4 @@
 
 -all txt files
 
--yoda1_analysis_final.Rmd
+-yoda1_and_mechanosome.Rmd
