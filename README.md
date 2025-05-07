@@ -1,59 +1,31 @@
-# A comparison of Yoda1-treated osteocyte RNA sequencing data to the osteocyte transcriptome (Youlten et al, 2021), osteocyte mechanosome (Gilbert et al, 2024), Li et al's 2019 fluid shear stress dataset, and Kuttapitiya et al's 2018 BML dataset
+# A comparison of Yoda1-treated osteocyte RNA sequencing data to the osteocyte transcriptome (Youlten et al, 2021), osteocyte mechanosome (Gilbert et al, 2024), Li et al's 2019 fluid shear stress dataset, and Kuttapitiya et al's 2017 BML dataset
 
 ### The Yoda1 RNAseq dataset is Control.DMSO_Yoda1_1.csv.
 
-##### For the Yoda1 and osteocyte transcriptome(Youlten et al. 2021) comparison, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--transcriptome.csv (Youlten et al. 2021)
+##### For the Yoda1 and osteocyte transcriptome(Youlten et al. 2021) comparison:
 
 -yoda1_and_osteocyte.Rmd
 
-##### For the Yoda1 and osteocyte signature (Youlten et al. 2021) comparison, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--osteocyte_sig_genes.csv (Youlten et al. 2021)
+##### For the Yoda1 and osteocyte signature (Youlten et al. 2021) comparison:
 
 -yoda1_and_osteocyte.Rmd
 
-##### For the Yoda1 analysis, these files were used:
-
--Control.DMSO_Yoda1_1.csv
+##### For the Yoda1 analysis:
 
 -yoda1_analysis_final.Rmd
 
-##### For the Yoda1 and osteocyte mechanosome (Gilbert et al. 2024) comparison, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--loadedvscontrol_counts.csv (Gilbert et al. 2024)
+##### For the Yoda1 and osteocyte mechanosome (Gilbert et al. 2024) comparison:
 
 -yoda1_and_mechanosome.Rmd
 
-##### For the Yoda1 and fluid shear stress (Li et al. 2019) comparison, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--fluid_shear.xlsx (Li et al. 2019)
+##### For the Yoda1 and fluid shear stress (Li et al. 2019) comparison:
 
 -yoda1_and_fluidshear.Rmd
 
-##### For the Yoda1 and bone marrow lesion (Kuttapitiya et al. 2018) comparison, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--bone_marrow_lesions.csv (Kuttapitiya et al. 2017)
+##### For the Yoda1 and bone marrow lesion (Kuttapitiya et al. 2017) comparison:
 
 -bml_and_yoda1.Rmd
 
-##### For the readouts of OA analysis, these files were used:
-
--Control.DMSO_Yoda1_1.csv
-
--Readouts_OA.XLSX (Gilbert et al. 2024)
-
--all txt files
+##### For the readouts of OA analysis:
 
 -yoda1_and_mechanosome.Rmd
